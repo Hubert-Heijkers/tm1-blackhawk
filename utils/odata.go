@@ -2,6 +2,7 @@ package odata
 
 import (
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net/http"
@@ -11,8 +12,36 @@ import (
 
 var Verbose = true
 
+// ResponseProcessorFunc is a callback function used to stream parse a response.
+type ResponseProcessorFunc func(io.Reader) (string, string)
+
+// Client is an OData Client
 type Client struct {
 	http.Client
+	processorFunc ResponseProcessorFunc
+}
+
+// NewClient creates and returns a new OData Client
+func NewClient(client http.Client, fn ResponseProcessorFunc) *Client {
+	c := new(Client)
+	c.Client = client
+	c.processorFunc = fn
+
+	return c
+}
+
+// TransactionLogEntry defines the structure of a single TransactionLog entity
+type TransactionLogEntry struct {
+	ID              int         `json:"ID"`
+	ChangeSetID     string      `json:"ChangeSetID"`
+	TimeStamp       string      `json:"TimeStamp"`
+	ReplicationTime string      `json:"ReplicationTime"`
+	User            string      `json:"User"`
+	Cube            string      `json:"Cube"`
+	Tuple           []string    `json:"Tuple"`
+	OldValue        string      `json:"OldValue"`
+	NewValue        string      `json:"NewValue"`
+	StatusMessage   interface{} `json:"StatusMessage"`
 }
 
 func (client *Client) ExecuteGETRequest(urlStr string) *http.Response {
@@ -117,7 +146,7 @@ func (client *Client) IterateCollection(datasourceServiceRootURL string, urlStr 
 	}
 }
 
-func (client *Client) TrackCollection(serviceRootURL string, urlStr string, interval time.Duration, processResponse func([]byte) (string, string)) {
+func (client *Client) TrackCollection(serviceRootURL string, urlStr string, interval time.Duration) {
 	// Set up the request to retrieve the collection given the passed url
 	// Note: While we are requesting the collection completely in one request, the service might
 	// opt to apply server driven paging and give us a partial response with a nextLink which
@@ -125,13 +154,9 @@ func (client *Client) TrackCollection(serviceRootURL string, urlStr string, inte
 	for urlStr := urlStr; urlStr != ""; {
 		resp := client.ExecuteGETRequestEx(serviceRootURL+urlStr, func(req *http.Request) { req.Header.Add("Prefer", "odata.track-changes") })
 		defer resp.Body.Close()
-		body, _ := ioutil.ReadAll(resp.Body)
-		if Verbose == true {
-			fmt.Println(string(body))
-		}
 
 		// Process the response
-		nextLink, deltaLink := processResponse(body)
+		nextLink, deltaLink := client.processorFunc(resp.Body)
 
 		// TM1 doesn't but other services could return a nextLink when applying server side windowing
 		// while returning the collection. Note that, following OData conventions, only the last
