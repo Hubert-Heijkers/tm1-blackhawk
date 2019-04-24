@@ -6,7 +6,6 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
-	"strings"
 	"time"
 )
 
@@ -84,41 +83,14 @@ func (client *Client) ExecuteGETRequestEx(urlStr string, preReq func(*http.Reque
 	return resp
 }
 
-func (client *Client) ExecutePOSTRequest(urlStr, contentType, body string) *http.Response {
-	// Create new, POST, request
-	req, _ := http.NewRequest("POST", urlStr, strings.NewReader(body))
+func (client *Client) ExecutePOSTRequest(urlStr, contentType string, stream io.ReadCloser) *http.Response {
+	req, _ := http.NewRequest("POST", urlStr, stream)
 	req.Header.Add("Content-Type", contentType)
 	// Add the OData-Version header
 	req.Header.Add("OData-Version", "4.0")
 	// We'll be expecting a JSON formatted response, set Accept header accordingly
 	req.Header.Add("Accept", "application/json")
-	if Verbose == true {
-		fmt.Println(req.Method, req.URL)
-		fmt.Println(body)
-	}
-	// Execute the request
-	resp, err := client.Do(req)
-	// If no errors then return the response
-	if err != nil {
-		log.Fatal(err)
-	}
-	return resp
-}
 
-func (client *Client) ExecutePOSTRequestEx(urlStr, contentType, body string, preReq func(*http.Request)) *http.Response {
-	// Create new, POST, request
-	req, _ := http.NewRequest("POST", urlStr, strings.NewReader(body))
-	req.Header.Add("Content-Type", contentType)
-	// Add the OData-Version header
-	req.Header.Add("OData-Version", "4.0")
-	// We'll be expecting a JSON formatted response, set Accept header accordingly
-	req.Header.Add("Accept", "application/json")
-	// Allow additional processing of the request before actually executing
-	preReq(req)
-	if Verbose == true {
-		fmt.Println(req.Method, req.URL)
-		fmt.Println(body)
-	}
 	// Execute the request
 	resp, err := client.Do(req)
 	// If no errors then return the response
