@@ -29,6 +29,12 @@ func NewClient(client http.Client, fn ResponseProcessorFunc) *Client {
 	return c
 }
 
+// TransactionLogContainer contains a TransactionLogEntry with
+type TransactionLogContainer struct {
+	DeltaLink string `json:"@odata.deltaLink"`
+	*TransactionLogEntry
+}
+
 // TransactionLogEntry defines the structure of a single TransactionLog entity
 type TransactionLogEntry struct {
 	ID              int         `json:"ID"`

@@ -20,7 +20,7 @@ func NewJSONReviver(stream io.Reader) *JSONReviver {
 }
 
 // ParseTransactionLogs parses an incoming stream response that contains transaction log entries.
-func (r *JSONReviver) ParseTransactionLogs(callback func(*TransactionLogEntry, bool)) error {
+func (r *JSONReviver) ParseTransactionLogs(callback func(*TransactionLogContainer)) error {
 	t, err := r.decoder.Token()
 	if err != nil {
 		return err
@@ -30,10 +30,16 @@ func (r *JSONReviver) ParseTransactionLogs(callback func(*TransactionLogEntry, b
 		return errors.New("JSON object start delimiter not found")
 	}
 
+	deltaLink := ""
+
 	for r.decoder.More() {
 		token, err := r.decoder.Token()
 		if err != nil {
 			return err
+		}
+
+		if token == "@odata.deltaLink" {
+			r.decoder.Decode(&deltaLink)
 		}
 
 		// Skip other fields than 'value' for simplicity
@@ -55,13 +61,17 @@ func (r *JSONReviver) ParseTransactionLogs(callback func(*TransactionLogEntry, b
 		for r.decoder.More() {
 			// Read next item (large object)
 			txnLog := TransactionLogEntry{}
+
 			err := r.decoder.Decode(&txnLog)
 			if err != nil {
 				return errors.New("unable to decode transaction log entry")
 			}
 
+			txnLogContainer := TransactionLogContainer{
+				TransactionLogEntry: &txnLog,
+			}
 			// Give transactionLog to the callback for processing.
-			callback(&txnLog, false)
+			callback(&txnLogContainer)
 		}
 		// End of Array
 		token, err = r.decoder.Token()
@@ -74,8 +84,16 @@ func (r *JSONReviver) ParseTransactionLogs(callback func(*TransactionLogEntry, b
 		}
 	}
 
+	t, err = r.decoder.Token()
+	if err != nil {
+		return err
+	}
+	if delim, ok := t.(json.Delim); !ok || delim != '}' {
+		return errors.New("JSON object end delimiter not found")
+	}
+
 	// Done parsing
-	callback(nil, true)
+	callback(&TransactionLogContainer{DeltaLink: deltaLink})
 
 	return nil
 }

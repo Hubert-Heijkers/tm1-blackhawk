@@ -44,15 +44,26 @@ func processTransactionLogEntries(stream io.Reader) (string, string) {
 
 	outputPipe, outputStream := io.Pipe()
 
+	// This is the place where we keep data from the previous request.
+	deltaLinkChannel := make(chan string)
+
 	go func() {
 		encoder := json.NewEncoder(outputStream)
-		outputStream.Write([]byte("{ \"value\": [ "))
-		isFirst := true
 
-		if err := reviver.ParseTransactionLogs(func(txnLogEntry *odata.TransactionLogEntry, done bool) {
+		count := 0
+
+		if err := reviver.ParseTransactionLogs(func(txnLogContainer *odata.TransactionLogContainer) {
+			txnLogEntry := txnLogContainer.TransactionLogEntry
+
 			if txnLogEntry != nil {
-				if isFirst {
-					isFirst = false
+				if count == 0 {
+					// Send a streaming POST request to a target server.
+					// OutputPipe is read in a streaming fashion as data is written to the outputStream.
+					go func() {
+						client.ExecutePOSTRequest("http://localhost:12345", "application/json", outputPipe)
+					}()
+					outputStream.Write([]byte("{ \"value\": [ "))
+					count++
 				} else {
 					outputStream.Write([]byte(", "))
 				}
@@ -64,9 +75,25 @@ func processTransactionLogEntries(stream io.Reader) (string, string) {
 				}
 			}
 
-			if done {
-				outputStream.Write([]byte("] "))
+			if txnLogContainer.DeltaLink != "" {
+				if count > 0 {
+					outputStream.Write([]byte("] "))
+				} else {
+					// Drains the pipe for the cases where there is no need to make a POST request.
+					go func() {
+						for {
+							buf := make([]byte, 8096)
+							_, err := outputPipe.Read(buf)
+							if err != nil {
+								break
+							}
+						}
+					}()
+				}
 				outputStream.Close()
+
+				// Writes to the deltaLinkChannel
+				deltaLinkChannel <- txnLogContainer.DeltaLink
 			}
 
 		}); err != nil {
@@ -74,58 +101,8 @@ func processTransactionLogEntries(stream io.Reader) (string, string) {
 		}
 	}()
 
-	// Send a streaming POST request to a target server.
-	// OutputPipe is read in a streaming fashion as data is written to the outputStream.
-	client.ExecutePOSTRequest("http://localhost:12345", "application/json", outputPipe)
-
-	// // Interate over the message log entries retrieved from the server
-	// for _, entry := range res.MessageLogEntries {
-
-	// 	// This is where the action is! This sample implementation is only interested in MDX
-	// 	// queries that are being processed by the server. This implementation keeps track of
-	// 	// the begin and end times of the MDXViewCreate and dumps those time stamps, including
-	// 	// the duration (time it took to create the view) into comma separated output which
-	// 	// can be redirected to a file for further analysis.
-	// 	if entry.Logger == "TM1.MdxViewCreate" {
-
-	// 		// Create a map, if not done so already, to keep track of MDX views that are being
-	// 		// created and map the Thread ID to the start time
-	// 		if threadMap == nil {
-	// 			threadMap = make(map[int]time.Time)
-	// 		}
-
-	// 		// Lookup this thread in the thread map
-	// 		tsStart, rec := threadMap[entry.ThreadID]
-
-	// 		// Parse the time stamp for this entry
-	// 		tsEntry, _ := time.Parse(time.RFC3339Nano, entry.TimeStamp)
-
-	// 		// Is this the entry indicating that a new view was created?
-	// 		if entry.Message == "View is created." {
-	// 			// It is, increate the query count
-	// 			queryCount++
-	// 			// Presumably we recorded the start time as well...
-	// 			if rec == true {
-	// 				// We did, dump query count, start and end times as well as the duration to output
-	// 				fmt.Printf("QUERY,%d,%s,%s,%0.3f\n", queryCount, tsStart.Format(time.RFC3339Nano), tsEntry.Format(time.RFC3339Nano), tsEntry.Sub(tsStart).Seconds())
-	// 				delete(threadMap, entry.ThreadID)
-	// 			} else {
-	// 				fmt.Printf("ERROR,%d,ERROR,ERROR,0.000\n", queryCount)
-	// 			}
-	// 		} else {
-	// 			// Not created so this is the message telling us which MDX we are about to create a view for
-	// 			if rec == false {
-	// 				threadMap[entry.ThreadID] = tsEntry
-	// 			} else {
-	// 				fmt.Printf("ERROR,%d,VIEW CREATED EXPECTED,ERROR,0.000\n", queryCount)
-	// 			}
-	// 		}
-	// 	}
-	// }
-
-	// Return the nextLink and deltaLink, if there any
-	// return res.NextLink, res.DeltaLink
-	return "", ""
+	// Channel waits here until something is written(even an empty string).
+	return "", <-deltaLinkChannel
 }
 
 func main() {
