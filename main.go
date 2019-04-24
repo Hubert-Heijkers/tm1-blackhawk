@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/tls"
 	b64 "encoding/base64"
+	"encoding/json"
 	"io"
 	"io/ioutil"
 	"log"
@@ -41,25 +42,41 @@ var lastQuery time.Time
 func processTransactionLogEntries(stream io.Reader) (string, string) {
 	reviver := odata.NewJSONReviver(stream)
 
-	if err := reviver.ParseTransactionLogs(func(txnLogEntry *odata.TransactionLogEntry) {
-		// Each transaction log will be printed here for now as they are parsed.
-		if txnLogEntry != nil {
-			log.Println(*txnLogEntry)
+	outputPipe, outputStream := io.Pipe()
+
+	go func() {
+		encoder := json.NewEncoder(outputStream)
+		outputStream.Write([]byte("{ \"value\": [ "))
+		isFirst := true
+
+		if err := reviver.ParseTransactionLogs(func(txnLogEntry *odata.TransactionLogEntry, done bool) {
+			if txnLogEntry != nil {
+				if isFirst {
+					isFirst = false
+				} else {
+					outputStream.Write([]byte(", "))
+				}
+				// TransactionLog is JSON encoded here
+				// json.Compact() can be used to convert json to a more compact version here.
+				err := encoder.Encode(txnLogEntry)
+				if err != nil {
+					log.Fatal(err.Error())
+				}
+			}
+
+			if done {
+				outputStream.Write([]byte("] "))
+				outputStream.Close()
+			}
+
+		}); err != nil {
+			log.Fatal(err.Error())
 		}
-		// TODO: A counter can be used to detect the first txnLogEntry and then a POST request can be created.
-		// Example POST request(streaming version)
-		// httpReq, err = http.NewRequest("POST", URL, outputStream)
+	}()
 
-	}); err != nil {
-		log.Fatal(err.Error())
-	}
-
-	// // Unmarshal the JSON response
-	// res := MessageLogEntriesResponse{}
-	// err := json.Unmarshal(responseBody, &res)
-	// if err != nil {
-	// 	log.Fatal(err)
-	// }
+	// Send a streaming POST request to a target server.
+	// OutputPipe is read in a streaming fashion as data is written to the outputStream.
+	client.ExecutePOSTRequest("http://localhost:12345", "application/json", outputPipe)
 
 	// // Interate over the message log entries retrieved from the server
 	// for _, entry := range res.MessageLogEntries {

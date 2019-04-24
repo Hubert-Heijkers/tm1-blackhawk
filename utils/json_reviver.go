@@ -19,8 +19,8 @@ func NewJSONReviver(stream io.Reader) *JSONReviver {
 	return r
 }
 
-// ParseTransactionLogs parses an incoming stream response thath contains transaction log entries.
-func (r *JSONReviver) ParseTransactionLogs(callback func(*TransactionLogEntry)) error {
+// ParseTransactionLogs parses an incoming stream response that contains transaction log entries.
+func (r *JSONReviver) ParseTransactionLogs(callback func(*TransactionLogEntry, bool)) error {
 	t, err := r.decoder.Token()
 	if err != nil {
 		return err
@@ -61,7 +61,7 @@ func (r *JSONReviver) ParseTransactionLogs(callback func(*TransactionLogEntry)) 
 			}
 
 			// Give transactionLog to the callback for processing.
-			callback(&txnLog)
+			callback(&txnLog, false)
 		}
 		// End of Array
 		token, err = r.decoder.Token()
@@ -73,6 +73,9 @@ func (r *JSONReviver) ParseTransactionLogs(callback func(*TransactionLogEntry)) 
 			return errors.New("JSON array end delimiter not found")
 		}
 	}
+
+	// Done parsing
+	callback(nil, true)
 
 	return nil
 }
