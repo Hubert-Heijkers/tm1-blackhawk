@@ -46,6 +46,7 @@ func processTransactionLogEntries(stream io.Reader) (string, string) {
 
 	// This is the place where we keep data from the previous request.
 	deltaLinkChannel := make(chan string)
+	defer close(deltaLinkChannel)
 
 	go func() {
 		encoder := json.NewEncoder(outputStream)
@@ -77,7 +78,7 @@ func processTransactionLogEntries(stream io.Reader) (string, string) {
 
 			if txnLogContainer.DeltaLink != "" {
 				if count > 0 {
-					outputStream.Write([]byte("] "))
+					outputStream.Write([]byte("] }"))
 				} else {
 					// Drains the pipe for the cases where there is no need to make a POST request.
 					go func() {
