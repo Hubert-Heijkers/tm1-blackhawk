@@ -39,8 +39,8 @@ type TransactionLogEntry struct {
 	User            string      `json:"User"`
 	Cube            string      `json:"Cube"`
 	Tuple           []string    `json:"Tuple"`
-	OldValue        string      `json:"OldValue"`
-	NewValue        string      `json:"NewValue"`
+	OldValue        interface{} `json:"OldValue"`
+	NewValue        interface{} `json:"NewValue"`
 	StatusMessage   interface{} `json:"StatusMessage"`
 }
 
